@@ -12,6 +12,8 @@ export const unstable_settings = {
 function RootLayoutNav() {
   const { isSignedIn } = useAuth();
 
+  console.log(isSignedIn);
+
   return (
     <>
       <Stack screenOptions={{ headerShown: false }}>
