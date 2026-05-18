@@ -1,7 +1,7 @@
 import "react-native-reanimated";
 
 import AppProviders from "@/providers";
-import { useAuth } from "@clerk/expo";
+import { useAuth } from "@clerk/clerk-expo";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 

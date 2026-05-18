@@ -1,276 +1,486 @@
-import { ThemedText } from "@/components/themed-text";
-import { ThemedView } from "@/components/themed-view";
-import { useSignIn } from "@clerk/expo";
-import { type Href, Link, useRouter } from "expo-router";
-import React from "react";
-import { Pressable, StyleSheet, TextInput, View } from "react-native";
+import { useSignIn } from "@clerk/clerk-expo";
+import { LinearGradient } from "expo-linear-gradient";
+import { Link } from "expo-router";
+import { SymbolView } from "expo-symbols";
+import { useState } from "react";
+import {
+  KeyboardAvoidingView,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from "react-native";
+import Animated, {
+  FadeIn,
+  FadeInDown,
+  FadeInUp,
+  useAnimatedStyle,
+  useSharedValue,
+  withRepeat,
+  withSequence,
+  withTiming,
+} from "react-native-reanimated";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-export default function Page() {
-  const { signIn, errors, fetchStatus } = useSignIn();
-  const router = useRouter();
+import { CodeVerification } from "@/components/auth";
+import { hapticButtonPress } from "@/lib/haptics";
+import { shadowPrimary } from "@/lib/styles/shadows";
 
-  const [emailAddress, setEmailAddress] = React.useState("");
-  const [password, setPassword] = React.useState("");
-  const [code, setCode] = React.useState("");
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
-  const handleSubmit = async () => {
-    const { error } = await signIn.password({
-      emailAddress,
-      password,
-    });
-    if (error) {
-      console.error(JSON.stringify(error, null, 2));
-      return;
-    }
+// Floating heart decoration component
+function FloatingHeart({
+  size,
+  top,
+  left,
+  delay,
+  opacity,
+}: {
+  size: number;
+  top: number;
+  left: number;
+  delay: number;
+  opacity: number;
+}) {
+  const translateY = useSharedValue(0);
 
-    if (signIn.status === "complete") {
-      await signIn.finalize({
-        navigate: ({ session, decorateUrl }) => {
-          if (session?.currentTask) {
-            // Handle pending session tasks
-            // See https://clerk.com/docs/guides/development/custom-flows/authentication/session-tasks
-            console.log(session?.currentTask);
-            return;
-          }
+  // Start floating animation
+  translateY.value = withRepeat(
+    withSequence(
+      withTiming(-10, { duration: 2000 }),
+      withTiming(10, { duration: 2000 }),
+    ),
+    -1,
+    true,
+  );
 
-          const url = decorateUrl("/");
-          if (url.startsWith("http")) {
-            window.location.href = url;
-          } else {
-            router.push(url as Href);
-          }
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: translateY.value }],
+  }));
+
+  return (
+    <Animated.View
+      entering={FadeIn.delay(delay).duration(1000)}
+      style={[
+        {
+          position: "absolute",
+          top,
+          left,
+          opacity,
         },
-      });
-    } else if (signIn.status === "needs_second_factor") {
-      // See https://clerk.com/docs/guides/development/custom-flows/authentication/multi-factor-authentication
-    } else if (signIn.status === "needs_client_trust") {
-      // For other second factor strategies,
-      // see https://clerk.com/docs/guides/development/custom-flows/authentication/client-trust
-      const emailCodeFactor = signIn.supportedSecondFactors.find(
-        (factor) => factor.strategy === "email_code",
-      );
+        animatedStyle,
+      ]}
+    >
+      <SymbolView name="heart.fill" size={size} tintColor="#FF6B6B" />
+    </Animated.View>
+  );
+}
 
-      if (emailCodeFactor) {
-        await signIn.mfa.sendEmailCode();
+export default function SignInScreen() {
+  const { signIn, setActive, isLoaded } = useSignIn();
+  const inset = useSafeAreaInsets();
+
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [error, setError] = useState("");
+  const [loading, setloading] = useState(false);
+  const [needSecondFactor, setNeedSecondFactor] = useState(false);
+  const [emailFocused, setEmailFocused] = useState(false);
+  const [passwordFocused, setPasswordFocused] = useState(false);
+
+  const handleSignIn = async () => {
+    if (!isLoaded) return;
+
+    hapticButtonPress();
+    setloading(true);
+    setError("");
+
+    try {
+      const result = await signIn.create({
+        identifier: email,
+        password,
+      });
+
+      if (result.status === "complete") {
+        await setActive({ session: result.createdSessionId });
+      } else if (result.status === "needs_second_factor") {
+        await signIn.prepareSecondFactor({
+          strategy: "email_code",
+        });
+        setNeedSecondFactor(true);
+      } else {
+        setError(`Sign in incomplete: ${result.status}`);
       }
-    } else {
-      // Check why the sign-in is not complete
-      console.error("Sign-in attempt not complete:", signIn);
+    } catch (error: any) {
+      setError(error.errors?.[0]?.message || "Failed to sign in");
+    } finally {
+      setloading(false);
     }
   };
 
-  const handleVerify = async () => {
-    await signIn.mfa.verifyEmailCode({ code });
+  const handleVerifySecondFactor = async (code: string) => {
+    if (!isLoaded) return;
 
-    if (signIn.status === "complete") {
-      await signIn.finalize({
-        navigate: ({ session, decorateUrl }) => {
-          if (session?.currentTask) {
-            // Handle pending session tasks
-            // See https://clerk.com/docs/guides/development/custom-flows/authentication/session-tasks
-            console.log(session?.currentTask);
-            return;
-          }
+    const result = await signIn.attemptSecondFactor({
+      strategy: "email_code",
+      code,
+    });
 
-          const url = decorateUrl("/");
-          if (url.startsWith("http")) {
-            window.location.href = url;
-          } else {
-            router.push(url as Href);
-          }
-        },
-      });
+    if (result.status === "complete") {
+      await setActive({ session: (await result).createdSessionId });
     } else {
-      // Check why the sign-in is not complete
-      console.error("Sign-in attempt not complete:", signIn);
+      throw new Error(`Verification incomplete: ${result.status}`);
     }
   };
 
-  if (signIn.status === "needs_client_trust") {
+  if (needSecondFactor) {
     return (
-      <ThemedView style={styles.container}>
-        <ThemedText
-          type="title"
-          style={[styles.title, { fontSize: 24, fontWeight: "bold" }]}
-        >
-          Verify your account
-        </ThemedText>
-        <TextInput
-          style={styles.input}
-          value={code}
-          placeholder="Enter your verification code"
-          placeholderTextColor="#666666"
-          onChangeText={(code) => setCode(code)}
-          keyboardType="numeric"
-        />
-        {errors.fields.code && (
-          <ThemedText style={styles.error}>
-            {errors.fields.code.message}
-          </ThemedText>
-        )}
-        <Pressable
-          style={({ pressed }) => [
-            styles.button,
-            fetchStatus === "fetching" && styles.buttonDisabled,
-            pressed && styles.buttonPressed,
-          ]}
-          onPress={handleVerify}
-          disabled={fetchStatus === "fetching"}
-        >
-          <ThemedText style={styles.buttonText}>Verify</ThemedText>
-        </Pressable>
-        <Pressable
-          style={({ pressed }) => [
-            styles.secondaryButton,
-            pressed && styles.buttonPressed,
-          ]}
-          onPress={() => signIn.mfa.sendEmailCode()}
-        >
-          <ThemedText style={styles.secondaryButtonText}>
-            I need a new code
-          </ThemedText>
-        </Pressable>
-        <Pressable
-          style={({ pressed }) => [
-            styles.secondaryButton,
-            pressed && styles.buttonPressed,
-          ]}
-          onPress={() => signIn.reset()}
-        >
-          <ThemedText style={styles.secondaryButtonText}>Start over</ThemedText>
-        </Pressable>
-      </ThemedView>
+      <CodeVerification
+        email={email}
+        title="Veriffy your identity"
+        icon="shield-checkmark-outline"
+        onVerify={handleVerifySecondFactor}
+        onBack={() => setNeedSecondFactor(false)}
+        backButtonText="Back to sign in"
+      />
     );
   }
 
+  const isValid = email.trim().length > 0 && password.length >= 6;
+
   return (
-    <ThemedView style={styles.container}>
-      <ThemedText type="title" style={styles.title}>
-        Sign in
-      </ThemedText>
+    <View style={styles.container}>
+      <LinearGradient
+        colors={["#FFF5F5", "#FFE8E8", "#FFF0F0", "#FFFFFF"]}
+        locations={[0, 0.3, 0.6, 1]}
+        style={StyleSheet.absoluteFill}
+      />
 
-      <ThemedText style={styles.label}>Email address</ThemedText>
-      <TextInput
-        style={styles.input}
-        autoCapitalize="none"
-        value={emailAddress}
-        placeholder="Enter email"
-        placeholderTextColor="#666666"
-        onChangeText={(emailAddress) => setEmailAddress(emailAddress)}
-        keyboardType="email-address"
+      {/* Decorative floating hearts */}
+      <FloatingHeart size={24} top={80} left={40} delay={0} opacity={0.15} />
+      <FloatingHeart
+        size={18}
+        top={140}
+        left={320}
+        delay={200}
+        opacity={0.12}
       />
-      {errors.fields.identifier && (
-        <ThemedText style={styles.error}>
-          {errors.fields.identifier.message}
-        </ThemedText>
-      )}
-      <ThemedText style={styles.label}>Password</ThemedText>
-      <TextInput
-        style={styles.input}
-        value={password}
-        placeholder="Enter password"
-        placeholderTextColor="#666666"
-        secureTextEntry={true}
-        onChangeText={(password) => setPassword(password)}
+      <FloatingHeart size={32} top={560} left={20} delay={400} opacity={0.1} />
+      <FloatingHeart
+        size={20}
+        top={600}
+        left={340}
+        delay={600}
+        opacity={0.08}
       />
-      {errors.fields.password && (
-        <ThemedText style={styles.error}>
-          {errors.fields.password.message}
-        </ThemedText>
-      )}
-      <Pressable
-        style={({ pressed }) => [
-          styles.button,
-          (!emailAddress || !password || fetchStatus === "fetching") &&
-            styles.buttonDisabled,
-          pressed && styles.buttonPressed,
-        ]}
-        onPress={handleSubmit}
-        disabled={!emailAddress || !password || fetchStatus === "fetching"}
+
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={process.env.EXPO_OS === "ios" ? "padding" : "height"}
       >
-        <ThemedText style={styles.buttonText}>Continue</ThemedText>
-      </Pressable>
-      {/* For your debugging purposes. You can just console.log errors, but we put them in the UI for convenience */}
-      {errors && (
-        <ThemedText style={styles.debug}>
-          {JSON.stringify(errors, null, 2)}
-        </ThemedText>
-      )}
+        <ScrollView
+          contentContainerStyle={{
+            flexGrow: 1,
+            paddingTop: inset.top + 24,
+            paddingHorizontal: 24,
+          }}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Logo section */}
+          <Animated.View
+            entering={FadeInDown.delay(100).duration(700).springify()}
+            style={styles.logoSection}
+          >
+            <View style={styles.logoContainer}>
+              <LinearGradient
+                colors={["#FF6B6B", "#FF8E8E"]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.logoGradient}
+              >
+                <SymbolView name="heart.fill" size={24} tintColor="#FFFFFF" />
+              </LinearGradient>
+            </View>
+            <Text style={styles.logoText}>Heartly</Text>
+            <Text style={styles.logoTagline}>Find your perfect match</Text>
+          </Animated.View>
 
-      <View style={styles.linkContainer}>
-        <ThemedText>Don't have an account? </ThemedText>
-        <Link href="/sign-up">
-          <ThemedText type="link">Sign up</ThemedText>
-        </Link>
-      </View>
-    </ThemedView>
+          {/* Input section */}
+          <Animated.View
+            entering={FadeInDown.delay(300).duration(700).springify()}
+            style={styles.inputSection}
+          >
+            {/* EMail Input */}
+            <View
+              style={[
+                styles.inputContainer,
+                emailFocused && styles.inputContainerFocused,
+              ]}
+            >
+              <View style={styles.inputContainer}>
+                <SymbolView
+                  name="envelope.fill"
+                  size={20}
+                  tintColor={emailFocused ? "#FF6B6B" : "#999999"}
+                />
+              </View>
+              <TextInput
+                placeholder="Email address"
+                value={email}
+                onChangeText={setEmail}
+                onFocus={() => setEmailFocused(true)}
+                onBlur={() => setEmailFocused(false)}
+                autoCapitalize="none"
+                keyboardType="email-address"
+                autoComplete="email"
+                style={styles.input}
+                placeholderTextColor="#AAAAAA"
+              />
+            </View>
+
+            {/* Password input */}
+            <View
+              style={[
+                styles.inputContainer,
+                passwordFocused && styles.inputContainerFocused,
+              ]}
+            >
+              <View style={styles.inputContainer}>
+                <SymbolView
+                  name="lock.fill"
+                  size={20}
+                  tintColor={passwordFocused ? "#FF6B6B" : "#999999"}
+                />
+              </View>
+              <TextInput
+                placeholder="Password"
+                value={password}
+                onChangeText={setPassword}
+                onFocus={() => setPasswordFocused(true)}
+                onBlur={() => setPasswordFocused(false)}
+                secureTextEntry={!showPassword}
+                autoComplete="password"
+                style={styles.input}
+                placeholderTextColor="#AAAAAA"
+              />
+              <Pressable
+                onPress={() => setShowPassword(!showPassword)}
+                style={styles.eyeButton}
+              >
+                <SymbolView
+                  name={showPassword ? "eye.slash.fill" : "eye.fill"}
+                  size={20}
+                  tintColor="#999999"
+                />
+              </Pressable>
+            </View>
+
+            {/* Forgot Password */}
+            <TouchableOpacity style={styles.forgotPassword}>
+              <Text style={styles.forgotPasswordText}>Forgot password?</Text>
+            </TouchableOpacity>
+
+            {/* Error Message */}
+            {error ? (
+              <Animated.View
+                entering={FadeInDown.duration(300)}
+                style={styles.errorContainer}
+              >
+                <SymbolView
+                  name="exclamationmark.triangle.fill"
+                  size={16}
+                  tintColor="#DC2626"
+                />
+                <Text selectable style={styles.errorText}>
+                  {error}
+                </Text>
+              </Animated.View>
+            ) : null}
+          </Animated.View>
+
+          <View style={{ flex: 1, minHeight: 40 }} />
+
+          {/* Bottom Section */}
+          <Animated.View
+            entering={FadeInUp.delay(400).duration(700).springify()}
+            style={styles.bottomSection}
+          >
+            {/* sign in button */}
+            <AnimatedPressable
+              onPress={handleSignIn}
+              disabled={loading || !isValid}
+              style={({ pressed }) => [
+                styles.primaryButton,
+                {
+                  opacity: loading || !isValid ? 0.6 : 1,
+                  transform: [{ scale: pressed ? 0.98 : 1 }],
+                },
+              ]}
+            >
+              <LinearGradient
+                colors={["#FF6B6B", "#FF5252"]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.buttonGradient}
+              >
+                {loading ? (
+                  <Text style={styles.buttonText}>Signing in...</Text>
+                ) : (
+                  <>
+                    <Text style={styles.buttonText}>Sign In</Text>
+                    <SymbolView
+                      name="arrow.right"
+                      size={18}
+                      tintColor="#FFFFFF"
+                    />
+                  </>
+                )}
+              </LinearGradient>
+            </AnimatedPressable>
+
+            {/* Sign up link */}
+            <View style={styles.signUpContainer}>
+              <Text style={styles.signUpText}>Don&apos;t have an account?</Text>
+              <Link href="/(auth)/sign-up" asChild>
+                <TouchableOpacity onPress={hapticButtonPress}>
+                  <Text style={styles.signUpLink}>Sign Up</Text>
+                </TouchableOpacity>
+              </Link>
+            </View>
+          </Animated.View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 20,
+    backgroundColor: "#FFFFFF",
+  },
+  logoSection: {
+    alignItems: "center",
     gap: 12,
+    marginBottom: 40,
   },
-  title: {
-    marginBottom: 8,
+  logoContainer: {
+    ...shadowPrimary,
   },
-  label: {
-    fontWeight: "600",
-    fontSize: 14,
+  logoGradient: {
+    width: 88,
+    height: 88,
+    borderRadius: 28,
+    borderCurve: "continuous",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  logoText: {
+    fontSize: 32,
+    fontWeight: "800",
+    color: "#1A1A1A",
+    letterSpacing: -0.5,
+  },
+  logoTagline: {
+    fontSize: 15,
+    color: "#888888",
+    fontWeight: "500",
+  },
+  inputSection: {
+    gap: 16,
+  },
+  inputContainer: {
+    height: 56,
+    borderRadius: 16,
+    borderCurve: "continuous",
+    backgroundColor: "#F8F8F8",
+    flexDirection: "row",
+    alignItems: "center",
+    borderWidth: 2,
+    borderColor: "transparent",
+  },
+  inputContainerFocused: {
+    borderColor: "#FF6B6B",
+    backgroundColor: "#FFFFFF",
+  },
+  inputIconContainer: {
+    width: 52,
+    alignItems: "center",
+    justifyContent: "center",
   },
   input: {
-    borderWidth: 1,
-    borderColor: "#ccc",
-    borderRadius: 8,
-    padding: 12,
+    flex: 1,
     fontSize: 16,
-    backgroundColor: "#fff",
+    color: "#1A1A1A",
+    paddingRight: 16,
   },
-  button: {
-    backgroundColor: "#0a7ea4",
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 8,
+  eyeButton: {
+    width: 48,
+    height: "100%",
+    justifyContent: "center",
     alignItems: "center",
-    marginTop: 8,
   },
-  buttonPressed: {
-    opacity: 0.7,
+  forgotPassword: {
+    alignSelf: "flex-end",
   },
-  buttonDisabled: {
-    opacity: 0.5,
+  forgotPasswordText: {
+    fontSize: 14,
+    color: "#FF6B6B",
+    fontWeight: "600",
+  },
+  errorContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "rgba(220,38,38,0.08)",
+    padding: 14,
+    borderRadius: 12,
+  },
+  errorText: {
+    flex: 1,
+    color: "#DC2626",
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  bottomSection: {
+    gap: 24,
+  },
+  primaryButton: {
+    borderRadius: 28,
+    borderCurve: "continuous",
+    overflow: "hidden",
+    ...shadowPrimary,
+  },
+  buttonGradient: {
+    height: 56,
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 8,
   },
   buttonText: {
-    color: "#fff",
-    fontWeight: "600",
+    fontSize: 17,
+    fontWeight: "700",
+    color: "#FFFFFF",
+    letterSpacing: 0.3,
   },
-  secondaryButton: {
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 8,
-    alignItems: "center",
-    marginTop: 8,
-  },
-  secondaryButtonText: {
-    color: "#0a7ea4",
-    fontWeight: "600",
-  },
-  linkContainer: {
+  signUpContainer: {
     flexDirection: "row",
-    gap: 4,
-    marginTop: 12,
-    alignItems: "center",
+    justifyContent: "center",
+    paddingBottom: 8,
   },
-  error: {
-    color: "#d32f2f",
-    fontSize: 12,
-    marginTop: -8,
+  signUpText: {
+    fontSize: 15,
+    color: "#666666",
   },
-  debug: {
-    fontSize: 10,
-    opacity: 0.5,
-    marginTop: 8,
+  signUpLink: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#FF6B6B",
   },
 });

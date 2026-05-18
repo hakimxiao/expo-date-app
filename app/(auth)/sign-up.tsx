@@ -413,7 +413,7 @@ export default function SignUpScreen() {
             </View>
 
             {/* Social button */}
-            <View style={styles.socialButton}>
+            <View style={styles.socialButtons}>
               <Pressable style={styles.socialButton}>
                 <SymbolView name="apple.logo" size={22} tintColor="#1A1A1A" />
               </Pressable>

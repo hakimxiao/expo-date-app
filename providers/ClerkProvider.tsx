@@ -1,7 +1,10 @@
-import { ClerkLoaded, ClerkProvider as ClerkProviderBase } from "@clerk/expo";
-import { tokenCache } from "@clerk/expo/token-cache";
+import { tokenCache } from "@/lib/auth";
+import {
+  ClerkLoaded,
+  ClerkProvider as ClerkProviderBase,
+} from "@clerk/clerk-expo";
 
-const clerkPublishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY;
+const clerkPublishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY!;
 
 if (!clerkPublishableKey) {
   throw new Error("Missing EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY");
