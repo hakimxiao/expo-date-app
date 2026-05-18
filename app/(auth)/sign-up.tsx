@@ -254,7 +254,6 @@ export default function SignUpScreen() {
                   tintColor={emailFocused ? "#FF6B6B" : "#999999"}
                 />
               </View>
-
               <TextInput
                 placeholder="Email address"
                 value={email}
@@ -331,7 +330,7 @@ export default function SignUpScreen() {
                   </View>
                   <Text
                     style={[
-                      styles.strenghtLabel,
+                      styles.strengthLabel,
                       { color: passwordStrength.color },
                     ]}
                   >
@@ -539,7 +538,7 @@ const styles = StyleSheet.create({
     height: 4,
     borderRadius: 2,
   },
-  strenghtLabel: {
+  strengthLabel: {
     fontSize: 12,
     fontWeight: "600",
   },
