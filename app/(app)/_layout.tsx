@@ -1,5 +1,8 @@
+import {} from "convex/react";
 import { Stack } from "expo-router";
-import React from "react";
+import {} from "react-native";
+
+import {} from "@/convex/_generated/api";
 
 const AppLayout = () => {
   return (

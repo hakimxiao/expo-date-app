@@ -1,8 +1,8 @@
 import { useSignIn } from "@clerk/clerk-expo";
+import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { Link } from "expo-router";
-import { SymbolView } from "expo-symbols";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   KeyboardAvoidingView,
   Pressable,
@@ -14,6 +14,7 @@ import {
   View,
 } from "react-native";
 import Animated, {
+  cancelAnimation,
   FadeIn,
   FadeInDown,
   FadeInUp,
@@ -31,7 +32,16 @@ import { shadowPrimary } from "@/lib/styles/shadows";
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
-// Floating heart decoration component
+const icons = {
+  action: "arrow-forward",
+  email: "mail",
+  error: "warning",
+  eye: "eye",
+  eyeOff: "eye-off",
+  heart: "heart",
+  lock: "lock-closed",
+} as const satisfies Record<string, keyof typeof Ionicons.glyphMap>;
+
 function FloatingHeart({
   size,
   top,
@@ -47,15 +57,20 @@ function FloatingHeart({
 }) {
   const translateY = useSharedValue(0);
 
-  // Start floating animation
-  translateY.value = withRepeat(
-    withSequence(
-      withTiming(-10, { duration: 2000 }),
-      withTiming(10, { duration: 2000 }),
-    ),
-    -1,
-    true,
-  );
+  useEffect(() => {
+    translateY.value = withRepeat(
+      withSequence(
+        withTiming(-10, { duration: 2000 }),
+        withTiming(10, { duration: 2000 }),
+      ),
+      -1,
+      true,
+    );
+
+    return () => {
+      cancelAnimation(translateY);
+    };
+  }, [translateY]);
 
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: translateY.value }],
@@ -64,17 +79,15 @@ function FloatingHeart({
   return (
     <Animated.View
       entering={FadeIn.delay(delay).duration(1000)}
-      style={[
-        {
-          position: "absolute",
-          top,
-          left,
-          opacity,
-        },
-        animatedStyle,
-      ]}
+      style={{
+        position: "absolute",
+        top,
+        left,
+      }}
     >
-      <SymbolView name="heart.fill" size={size} tintColor="#FF6B6B" />
+      <Animated.View style={[{ opacity }, animatedStyle]}>
+        <Ionicons name={icons.heart} size={size} color="#FF6B6B" />
+      </Animated.View>
     </Animated.View>
   );
 }
@@ -87,7 +100,7 @@ export default function SignInScreen() {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
-  const [loading, setloading] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [needSecondFactor, setNeedSecondFactor] = useState(false);
   const [emailFocused, setEmailFocused] = useState(false);
   const [passwordFocused, setPasswordFocused] = useState(false);
@@ -96,7 +109,7 @@ export default function SignInScreen() {
     if (!isLoaded) return;
 
     hapticButtonPress();
-    setloading(true);
+    setLoading(true);
     setError("");
 
     try {
@@ -115,10 +128,10 @@ export default function SignInScreen() {
       } else {
         setError(`Sign in incomplete: ${result.status}`);
       }
-    } catch (error: any) {
-      setError(error.errors?.[0]?.message || "Failed to sign in");
+    } catch (authError: any) {
+      setError(authError.errors?.[0]?.message || "Failed to sign in");
     } finally {
-      setloading(false);
+      setLoading(false);
     }
   };
 
@@ -131,7 +144,7 @@ export default function SignInScreen() {
     });
 
     if (result.status === "complete") {
-      await setActive({ session: (await result).createdSessionId });
+      await setActive({ session: result.createdSessionId });
     } else {
       throw new Error(`Verification incomplete: ${result.status}`);
     }
@@ -141,7 +154,7 @@ export default function SignInScreen() {
     return (
       <CodeVerification
         email={email}
-        title="Veriffy your identity"
+        title="Verify your identity"
         icon="shield-checkmark-outline"
         onVerify={handleVerifySecondFactor}
         onBack={() => setNeedSecondFactor(false)}
@@ -160,7 +173,6 @@ export default function SignInScreen() {
         style={StyleSheet.absoluteFill}
       />
 
-      {/* Decorative floating hearts */}
       <FloatingHeart size={24} top={80} left={40} delay={0} opacity={0.15} />
       <FloatingHeart
         size={18}
@@ -186,12 +198,12 @@ export default function SignInScreen() {
           contentContainerStyle={{
             flexGrow: 1,
             paddingTop: inset.top + 24,
+            paddingBottom: inset.bottom + 24,
             paddingHorizontal: 24,
           }}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          {/* Logo section */}
           <Animated.View
             entering={FadeInDown.delay(100).duration(700).springify()}
             style={styles.logoSection}
@@ -203,30 +215,28 @@ export default function SignInScreen() {
                 end={{ x: 1, y: 1 }}
                 style={styles.logoGradient}
               >
-                <SymbolView name="heart.fill" size={24} tintColor="#FFFFFF" />
+                <Ionicons name={icons.heart} size={24} color="#FFFFFF" />
               </LinearGradient>
             </View>
             <Text style={styles.logoText}>Heartly</Text>
             <Text style={styles.logoTagline}>Find your perfect match</Text>
           </Animated.View>
 
-          {/* Input section */}
           <Animated.View
             entering={FadeInDown.delay(300).duration(700).springify()}
             style={styles.inputSection}
           >
-            {/* EMail Input */}
             <View
               style={[
                 styles.inputContainer,
                 emailFocused && styles.inputContainerFocused,
               ]}
             >
-              <View style={styles.inputContainer}>
-                <SymbolView
-                  name="envelope.fill"
+              <View style={styles.inputIconContainer}>
+                <Ionicons
+                  name={icons.email}
                   size={20}
-                  tintColor={emailFocused ? "#FF6B6B" : "#999999"}
+                  color={emailFocused ? "#FF6B6B" : "#999999"}
                 />
               </View>
               <TextInput
@@ -243,18 +253,17 @@ export default function SignInScreen() {
               />
             </View>
 
-            {/* Password input */}
             <View
               style={[
                 styles.inputContainer,
                 passwordFocused && styles.inputContainerFocused,
               ]}
             >
-              <View style={styles.inputContainer}>
-                <SymbolView
-                  name="lock.fill"
+              <View style={styles.inputIconContainer}>
+                <Ionicons
+                  name={icons.lock}
                   size={20}
-                  tintColor={passwordFocused ? "#FF6B6B" : "#999999"}
+                  color={passwordFocused ? "#FF6B6B" : "#999999"}
                 />
               </View>
               <TextInput
@@ -272,30 +281,24 @@ export default function SignInScreen() {
                 onPress={() => setShowPassword(!showPassword)}
                 style={styles.eyeButton}
               >
-                <SymbolView
-                  name={showPassword ? "eye.slash.fill" : "eye.fill"}
+                <Ionicons
+                  name={showPassword ? icons.eyeOff : icons.eye}
                   size={20}
-                  tintColor="#999999"
+                  color="#999999"
                 />
               </Pressable>
             </View>
 
-            {/* Forgot Password */}
             <TouchableOpacity style={styles.forgotPassword}>
               <Text style={styles.forgotPasswordText}>Forgot password?</Text>
             </TouchableOpacity>
 
-            {/* Error Message */}
             {error ? (
               <Animated.View
                 entering={FadeInDown.duration(300)}
                 style={styles.errorContainer}
               >
-                <SymbolView
-                  name="exclamationmark.triangle.fill"
-                  size={16}
-                  tintColor="#DC2626"
-                />
+                <Ionicons name={icons.error} size={16} color="#DC2626" />
                 <Text selectable style={styles.errorText}>
                   {error}
                 </Text>
@@ -305,12 +308,10 @@ export default function SignInScreen() {
 
           <View style={{ flex: 1, minHeight: 40 }} />
 
-          {/* Bottom Section */}
           <Animated.View
             entering={FadeInUp.delay(400).duration(700).springify()}
             style={styles.bottomSection}
           >
-            {/* sign in button */}
             <AnimatedPressable
               onPress={handleSignIn}
               disabled={loading || !isValid}
@@ -333,22 +334,17 @@ export default function SignInScreen() {
                 ) : (
                   <>
                     <Text style={styles.buttonText}>Sign In</Text>
-                    <SymbolView
-                      name="arrow.right"
-                      size={18}
-                      tintColor="#FFFFFF"
-                    />
+                    <Ionicons name={icons.action} size={18} color="#FFFFFF" />
                   </>
                 )}
               </LinearGradient>
             </AnimatedPressable>
 
-            {/* Sign up link */}
             <View style={styles.signUpContainer}>
               <Text style={styles.signUpText}>Don&apos;t have an account?</Text>
               <Link href="/(auth)/sign-up" asChild>
                 <TouchableOpacity onPress={hapticButtonPress}>
-                  <Text style={styles.signUpLink}>Sign Up</Text>
+                  <Text style={styles.signUpLink}> Sign Up</Text>
                 </TouchableOpacity>
               </Link>
             </View>
